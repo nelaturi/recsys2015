@@ -78,9 +78,9 @@ public class YoochooseParser {
         
         //Label [Importance] [Base] ['Tag]
         if (lastE instanceof Purchase) {
-          sb.append("1 1.0 1 'purchaser|");
+          sb.append("1 1.0 'purchaser|");
         } else {
-          sb.append("0 1.0 0 'clicker|");
+          sb.append("0 1.0 'clicker|");
         }
 
         sb.append("AggregateFeatures numClicks:" + events.size() + " lifespan:"
@@ -319,8 +319,8 @@ public class YoochooseParser {
     //We use this map later to calculate a popularity feature in the output file
     itemsPurchased = sortByValue(Collections.reverseOrder(), 400, itemsPurchased);
     categoriesBrowsed = sortByValue(Collections.reverseOrder(), 100, categoriesBrowsed);
-    LOG.info("Top 400 items purchased: \n{}", output(itemsPurchased, itemsPurchased.size()));
-    LOG.info("Top 100 cats browsed: \n{}", output(categoriesBrowsed, categoriesBrowsed.size()));
+    LOG.info("Top 400 items purchased: \n{}", output(itemsPurchased));
+    LOG.info("Top 100 cats browsed: \n{}", output(categoriesBrowsed));
   }
   
   private Map<Integer, Integer> sortByValue(Comparator<Integer> inC, int inLimit, Map<Integer, Integer> inSrc){
@@ -344,14 +344,12 @@ public class YoochooseParser {
     return rVal;
   }
 
-  private Object output(Map<Integer, Integer> inBuckets, int inPurchasers) {
+  private Object output(Map<Integer, Integer> inBuckets) {
     StringBuilder sb = new StringBuilder();
-    int cumulative = 0;
 
     for (Map.Entry<Integer, Integer> e : inBuckets.entrySet()) {
-      cumulative += e.getValue();
       sb.append(
-          e.getKey() + ":" + e.getValue() + "(" + (float) cumulative * 100 / inPurchasers + "%)\n");
+          e.getKey() + ":" + e.getValue() + "\n");
     }
     return sb.toString();
   }
