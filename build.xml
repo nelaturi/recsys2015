@@ -50,7 +50,6 @@
 
 	<target name="test" depends="compile-tests" description="Run the test suite">
 		<mkdir dir="${reports.dir}" />
-		<jacoco:coverage destfile="${reports.dir}/jacoco.exec">
 			<junit printsummary="yes" haltonfailure="yes" fork="true" forkmode="once" showoutput="true">
         <jvmarg value="-Xms8G" />
         <jvmarg value="-Xmx8G" />
@@ -65,21 +64,6 @@
 					<fileset dir="test" includes="**/*Test*.java" />
 				</batchtest>
 			</junit>
-		</jacoco:coverage>
-		<jacoco:report>
-			<executiondata>
-				<file file="${reports.dir}/jacoco.exec" />
-			</executiondata>
-			<structure name="Recsys 2015">
-				<classfiles>
-					<fileset dir="${build}" includes="**/*.class" />
-				</classfiles>
-				<sourcefiles>
-					<fileset dir="src" includes="**/*.java" />
-				</sourcefiles>
-			</structure>
-			<html destdir="${reports.dir}/jacoco" />
-		</jacoco:report>
 	</target>
 
 	<target name="dist" depends="compile" description="a clean-ish dist target for Platform resulting in a zip containing a runnable jar and it's libraries">
