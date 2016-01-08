@@ -1,0 +1,128 @@
+<project name="phd" default="compile" basedir="." xmlns:ivy="antlib:org.apache.ivy.ant" xmlns:jacoco="antlib:org.jacoco.ant">
+	<description>
+        Recsys 2015
+    </description>
+
+	<property name="main.class" value="core.http.Server" />
+	<property name="dist.dir" location="dist" />
+	<property name="conf.dir" location="conf" />
+	<property name="public.dir" location="public" />
+	<property name="build" location="bin" />
+	<property name="build.utils" location="bin" />
+	<property name="reports.dir" location="reports" />
+
+	<path id="project.classpath">
+		<fileset dir="lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<pathelement location="conf" />
+	</path>
+
+	<target name="clean" description="Remove compiled classes and build artifacts">
+		<delete dir="${dist.dir}" />
+		<delete dir="${build}" />
+		<delete dir="lib" />
+	</target>
+
+	<target name="resolve" description="Resolve and retrieve all targets in ivy.xml">
+		<ivy:retrieve pattern="lib/[conf]/[artifact]-[revision](-[classifier]).[ext]" sync="true" type="jar,bundle" log="quiet" />
+	</target>
+
+	<target name="compile" depends="resolve" description="Compile src and test code">
+		<mkdir dir="${build}" />
+		<javac srcdir="src" destdir="${build}" target="1.8" source="1.8" includeantruntime="false" debug="on" debuglevel="lines,vars,source" encoding="UTF-8">
+			<classpath>
+				<fileset dir="lib/compile" erroronmissingdir="false" includes="**/*.jar" />
+			</classpath>
+		</javac>
+
+	</target>
+
+	<target name="compile-tests" depends="compile">
+		<javac srcdir="test" destdir="${build}" target="1.8" source="1.8" includeantruntime="false" debug="on" debuglevel="lines,vars,source" encoding="UTF-8">
+			<classpath>
+				<pathelement location="${build}" />
+				<!-- all libs -->
+				<fileset dir="lib/test" erroronmissingdir="false" includes="**/*.jar" />
+			</classpath>
+		</javac>
+	</target>
+
+	<target name="test" depends="compile-tests" description="Run the test suite">
+		<mkdir dir="${reports.dir}" />
+		<jacoco:coverage destfile="${reports.dir}/jacoco.exec">
+			<junit printsummary="yes" haltonfailure="yes" fork="true" forkmode="once" showoutput="true">
+        <jvmarg value="-Xms6G" />
+        <jvmarg value="-Xmx6G" />
+
+				<classpath>
+					<pathelement location="${build}" />
+					<fileset dir="lib/test" includes="**/*.jar" />
+					<pathelement location="conf" />
+				</classpath>
+				<formatter type="plain" />
+				<batchtest fork="yes" todir="${reports.dir}">
+					<fileset dir="test" includes="**/*Test*.java" />
+				</batchtest>
+			</junit>
+		</jacoco:coverage>
+		<jacoco:report>
+			<executiondata>
+				<file file="${reports.dir}/jacoco.exec" />
+			</executiondata>
+			<structure name="Recsys 2015">
+				<classfiles>
+					<fileset dir="${build}" includes="**/*.class" />
+				</classfiles>
+				<sourcefiles>
+					<fileset dir="src" includes="**/*.java" />
+				</sourcefiles>
+			</structure>
+			<html destdir="${reports.dir}/jacoco" />
+		</jacoco:report>
+	</target>
+
+	<target name="dist" depends="compile" description="a clean-ish dist target for Platform resulting in a zip containing a runnable jar and it's libraries">
+		<mkdir dir="${dist.dir}" />
+		<mkdir dir="${dist.dir}/lib" />
+		<mkdir dir="${dist.dir}/conf" />
+
+		<copy todir="${dist.dir}/lib">
+			<fileset dir="lib/compile" includes="**/*.jar" />
+		</copy>
+
+		<copy todir="${dist.dir}/conf">
+			<fileset dir="${conf.dir}" />
+		</copy>
+
+		<manifestclasspath property="jar.classpath" jarfile="${dist.dir}/platform.jar">
+			<classpath>
+				<fileset dir="${dist.dir}/lib" includes="**/*.jar" />
+				<pathelement location="${dist.dir}/conf" />
+			</classpath>
+		</manifestclasspath>
+
+		<jar destfile="${dist.dir}/platform.jar">
+			<manifest>
+				<attribute name="Main-Class" value="${main.class}" />
+				<attribute name="Class-Path" value="${jar.classpath}" />
+			</manifest>
+			<fileset dir="${build}" includes="**/*.class" />
+		</jar>
+	</target>
+
+	<target name="dist-sources" depends="dist">
+		<jar destfile="${dist.dir}/platform-source.jar">
+			<fileset dir="src" includes="**/*.java" />
+		</jar>
+	</target>
+
+	<target name="package" depends="clean,compile,dist" description="Clean up and create a dist package" />
+
+	<target name="ivy-report" description="Report what Ivy is doing">
+		<mkdir dir="ivy-report" />
+		<ivy:resolve type="${ivy.resolve.types}" />
+		<ivy:report todir="ivy-report" />
+	</target>
+
+</project>

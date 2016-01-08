@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ivy-module version="2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://ant.apache.org/ivy/schemas/ivy.xsd">
+  <info organisation="hsheil" module="recsys2015" />
+  <configurations>
+    <conf name="compile" visibility="public" />
+    <conf name="test" visibility="private" />
+  </configurations>
+  <publications>
+    <artifact name="phd" type="jar" conf="compile" />
+  </publications>
+  <dependencies>
+    <dependency org="au.com.bytecode" name="opencsv" rev="2.4"/>
+    <dependency org="org.slf4j" name="slf4j-api" rev="1.7.7" conf="*->default" />
+    <dependency org="ch.qos.logback" name="logback-classic" rev="1.1.2" conf="*->default" />
+    <dependency org="junit" name="junit" rev="4.11" conf="test->default" />
+  </dependencies>
+</ivy-module>
