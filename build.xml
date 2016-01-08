@@ -52,8 +52,8 @@
 		<mkdir dir="${reports.dir}" />
 		<jacoco:coverage destfile="${reports.dir}/jacoco.exec">
 			<junit printsummary="yes" haltonfailure="yes" fork="true" forkmode="once" showoutput="true">
-        <jvmarg value="-Xms6G" />
-        <jvmarg value="-Xmx6G" />
+        <jvmarg value="-Xms8G" />
+        <jvmarg value="-Xmx8G" />
 
 				<classpath>
 					<pathelement location="${build}" />

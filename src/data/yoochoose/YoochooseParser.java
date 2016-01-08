@@ -75,10 +75,12 @@ public class YoochooseParser {
         List<Event> events = entry.getValue();
         StringBuilder sb = new StringBuilder();
         Event lastE = events.get(events.size() - 1);
+        
+        //Label [Importance] [Base] ['Tag]
         if (lastE instanceof Purchase) {
-          sb.append("1 1.0 'purchaser|");
+          sb.append("1 1.0 1 'purchaser|");
         } else {
-          sb.append("0 1.0 'clicker|");
+          sb.append("0 1.0 0 'clicker|");
         }
 
         sb.append("AggregateFeatures numClicks:" + events.size() + " lifespan:"
