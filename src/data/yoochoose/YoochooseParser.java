@@ -31,9 +31,7 @@ import au.com.bytecode.opencsv.CSVReader;
  * 
  * And the solution is here: http://s3-eu-west-1.amazonaws.com/yc-rdata/yoochoose-solution.dat
  * 
- * We generate two types of file here - for WEKA and Vowpal Wabbit:
- * 
- * WEKA ARFF format: http://www.cs.waikato.ac.nz/ml/weka/arff.html
+ * We generate one file type currently - Vowpal Wabbit:
  * 
  * VW format: https://github.com/JohnLangford/vowpal_wabbit/wiki/Input-format
  * 
@@ -78,7 +76,9 @@ public class YoochooseParser {
         
         //Label [Importance] [Base] ['Tag]
         if (lastE instanceof Purchase) {
-          sb.append("1 18.0 'purchaser|");
+          //Gently bump the weight of purchaser example - improves (TP - FP) by
+          //~16.67% (28546 vs 24,466)
+          sb.append("1 1.4 'purchaser|");
         } else {
           sb.append("0 1.0 'clicker|");
         }
