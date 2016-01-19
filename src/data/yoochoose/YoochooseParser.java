@@ -78,7 +78,7 @@ public class YoochooseParser {
         
         //Label [Importance] [Base] ['Tag]
         if (lastE instanceof Purchase) {
-          sb.append("1 1.0 'purchaser|");
+          sb.append("1 18.0 'purchaser|");
         } else {
           sb.append("0 1.0 'clicker|");
         }
