@@ -95,11 +95,11 @@ public class YoochooseParser {
         LocalDateTime ldt2 = events.get(events.size() - 1).getDate();
 
         // Now add in date / time features that span the session
-//        sb.append(" sMonth:" + ldt1.getMonthValue() + " sDay:" + ldt1.getDayOfMonth() + " sWeekDay:" + ldt1.getDayOfWeek().getValue()+" sHour:"
-//            + ldt1.getHour() + " sMin:" + ldt1.getMinute() + " sSec:" + ldt1.getSecond());
-//
-//        sb.append(" eMonth:" + ldt2.getMonthValue() + " eDay:" + ldt2.getDayOfMonth() + " eWeekDay:" + ldt2.getDayOfWeek().getValue()+" eHour:"
-//            + ldt2.getHour() + " eMin:" + ldt2.getMinute() + " eSec:" + ldt2.getSecond());
+        sb.append(" sMonth:" + ldt1.getMonthValue() + " sDay:" + ldt1.getDayOfMonth() + " sWeekDay:" + ldt1.getDayOfWeek().getValue()+" sHour:"
+            + ldt1.getHour() + " sMin:" + ldt1.getMinute() + " sSec:" + ldt1.getSecond());
+
+        sb.append(" eMonth:" + ldt2.getMonthValue() + " eDay:" + ldt2.getDayOfMonth() + " eWeekDay:" + ldt2.getDayOfWeek().getValue()+" eHour:"
+            + ldt2.getHour() + " eMin:" + ldt2.getMinute() + " eSec:" + ldt2.getSecond());
 
         // Now add in # unique items and categories
         sb.append(" numItems:" + getItems(events) + " numCategories:" + getCategories(events));
