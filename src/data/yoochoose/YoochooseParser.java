@@ -132,8 +132,9 @@ public class YoochooseParser {
           }
 
           LocalDateTime ldt = e.getDate();
-          //sb.append(" |Event" + k + " mth:" + ldt.getMonthValue() + " day:" + ldt.getDayOfMonth()+ " hour:" +ldt.getHour());
-          sb.append(" |Event" + k);
+          //sb.append(" |Event" + k + " mth:" + ldt.getMonthValue() + " day:" + ldt.getDayOfMonth()+ " hour:" +ldt.getHour()+" minute:" +ldt.getMinute()+" second:" +ldt.getSecond());
+          sb.append(" |Event" + k + " hour:" +ldt.getHour()+" minute:" +ldt.getMinute()+" second:" +ldt.getSecond());
+          //sb.append(" |Event" + k);
           sb.append(" itemId:" + e.getItemId() + " dwellTime:" + duration);
           if (e instanceof Click) {
             Click c = (Click) e;
