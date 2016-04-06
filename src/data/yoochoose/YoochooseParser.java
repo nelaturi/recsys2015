@@ -61,7 +61,7 @@ public class YoochooseParser {
     similar = new TreeMap<>(Collections.reverseOrder());
   }
 
-  public void buildSaveVwFile(Map<Integer, List<Event>> visitors, String inFName) {
+  public void buildSaveVwFile(Map<Integer, List<Event>> visitors, String inFName, boolean isTrain) {
     LOG.info("Creating VW file from data loaded");
     long startTime = System.currentTimeMillis();
     long currTime = startTime;
@@ -75,12 +75,17 @@ public class YoochooseParser {
         Event lastE = events.get(events.size() - 1);
         
         //Label [Importance] [Base] ['Tag]
-        if (lastE instanceof Purchase) {
-          //Gently bump the weight of purchaser example - improves (TP - FP) by
-          //~16.67% (28546 vs 24,466)
-          sb.append("1 1.4 'purchaser|");
+        if (isTrain){
+          if (lastE instanceof Purchase) {
+            //Bump the weight of purchaser example - improves (TP - FP) by
+            //~16.67% (28546 vs 24,466) on the full training set
+            sb.append("1 1.4");
+          } else {
+            sb.append("0 1.0");
+          }
+          sb.append(" '"+entry.getKey()+"|");
         } else {
-          sb.append("0 1.0 'clicker|");
+          sb.append("'"+entry.getKey()+"|");
         }
 
         sb.append("AggregateFeatures numClicks:" + events.size() + " lifespan:"
@@ -140,7 +145,7 @@ public class YoochooseParser {
         i++;
         currTime = System.currentTimeMillis();
         if ((currTime - startTime) > LOG_INTERVAL) {
-          LOG.info("{} instance processed (rate: {}/sec)", i,
+          LOG.info("{} sessions processed (rate: {}/sec)", i,
               (float) ((i - j) / LOG_INTERVAL) * 1_000);
           startTime = currTime;
           j = i;
