@@ -41,7 +41,7 @@ public class YoochooseParser {
 
   private static final Logger LOG = LoggerFactory.getLogger(YoochooseParser.class);
 
-  private static final int NUM_EVENTS = 6;
+  private static final int NUM_EVENTS = 400;
 
   private static final long LOG_INTERVAL = 5_000L;
 
@@ -102,7 +102,7 @@ public class YoochooseParser {
             + ldt2.getHour() + " eMin:" + ldt2.getMinute() + " eSec:" + ldt2.getSecond());
 
         // Now add in # unique items and categories
-        sb.append(" numItems:" + getItems(events) + " numCategories:" + getCategories(events));
+        sb.append(" numItems:" + getUniqueItems(events) + " numCategories:" + getUniqueCategories(events));
 
         // Rough approximation for popular, purchased items
         sb.append(" viewedPopularItems:" + (didViewPopularItems(events) ? 1.0 : 0.0));
@@ -133,13 +133,11 @@ public class YoochooseParser {
 
           LocalDateTime ldt = e.getDate();
           sb.append(" |Event" + k + " mth:" + ldt.getMonthValue() + " day:" + ldt.getDayOfMonth()+ " hour:" +ldt.getHour()+" minute:" +ldt.getMinute()+" second:" +ldt.getSecond());
-          //sb.append(" |Event" + k + " hour:" +ldt.getHour()+" minute:" +ldt.getMinute()+" second:" +ldt.getSecond());
-          //sb.append(" |Event" + k);
-          sb.append(" itemId:" + e.getItemId() + " dwellTime:" + duration);
+          sb.append(" " +e.getItemId()+"-itemId:1.0" + " dwellTime:" + duration);
           if (e instanceof Click) {
             Click c = (Click) e;
             sb.append(
-                " catId:" + c.getCategoryId() + " special:" + (c.isSpecial() ? "1.0" : "0.0"));
+                " " + c.getCategoryId()+ "-catId:1.0" + " special:" + (c.isSpecial() ? "1.0" : "0.0"));
           }
         }
         sb.append("\n");
@@ -210,7 +208,7 @@ public class YoochooseParser {
   }
   
 
-  private int getCategories(List<Event> events) {
+  private int getUniqueCategories(List<Event> events) {
     for (Event e : events) {
       if (e instanceof Click) {
         Click c = (Click) e;
@@ -223,7 +221,7 @@ public class YoochooseParser {
     return rVal;
   }
 
-  private int getItems(List<Event> events) {
+  private int getUniqueItems(List<Event> events) {
     for (Event e : events) {
       int x = e.getItemId();
       uniques.add(x);
