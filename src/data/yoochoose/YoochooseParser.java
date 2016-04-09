@@ -14,8 +14,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.TreeMap;
 import java.util.Set;
 
@@ -23,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import au.com.bytecode.opencsv.CSVReader;
+
 /**
  * See http://2015.recsyschallenge.com/
  * 
@@ -46,102 +49,46 @@ public class YoochooseParser {
   private static final long LOG_INTERVAL = 5_000L;
 
   private Set<Integer> uniques;
-  
+
   private Map<Integer, Integer> similar;
 
-  Map<Integer, Integer> itemsPurchased;
-  
-  Map<Integer, Integer> categoriesBrowsed;
+  private Map<Integer, Integer> itemsPurchased;
 
-  public YoochooseParser() {
+  private Map<Integer, Integer> categoriesBrowsed;
+
+  private Map<Integer, List<Event>> clickers;
+  private Map<Integer, List<Event>> buyers;
+
+  public YoochooseParser(int inClickers, int inBuyers) {
     uniques = new HashSet<>();
     itemsPurchased = new HashMap<>();
     categoriesBrowsed = new HashMap<>();
-    //We always want the highest count first
+    // We always want the highest count first
     similar = new TreeMap<>(Collections.reverseOrder());
+    clickers = new HashMap<>(inClickers);
+    buyers = new HashMap<>(inBuyers);
+
   }
 
-  public void buildSaveVwFile(Map<Integer, List<Event>> visitors, String inFName, boolean isTrain) {
+  public void buildSaveVwFile(String inFName, boolean isTrain) {
     LOG.info("Creating VW file from data loaded");
     long startTime = System.currentTimeMillis();
     long currTime = startTime;
     int i = 0;
     int j = 0;
+    
 
     try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(inFName)));) {
-      for (Map.Entry<Integer, List<Event>> entry : visitors.entrySet()) {
-        List<Event> events = entry.getValue();
-        StringBuilder sb = new StringBuilder();
-        Event lastE = events.get(events.size() - 1);
-        
-        //Label [Importance] [Base] ['Tag]
+      //We need a separate iterator for buyers..
+      Iterator<Entry<Integer, List<Event>>> buyerEntries = buyers.entrySet().iterator();
+      for (Map.Entry<Integer, List<Event>> clickerEntry : clickers.entrySet()) {
+        output(clickerEntry, out, isTrain);
         if (isTrain){
-          if (lastE instanceof Purchase) {
-            //Bump the weight of purchaser example - improves (TP - FP) by
-            //~16.67% (28546 vs 24,466) on the full training set
-            sb.append("1 1.4");
-          } else {
-            sb.append("0 1.0");
+          if (!buyerEntries.hasNext()){
+            buyerEntries = buyers.entrySet().iterator();
           }
-          sb.append(" '"+entry.getKey()+"|");
-        } else {
-          sb.append("'"+entry.getKey()+"|");
+          output(buyerEntries.next(), out, isTrain);
         }
-
-        sb.append("AggregateFeatures numClicks:" + events.size() + " lifespan:"
-            + calculateDuration(events.get(0), events.get(events.size() - 1)));
-
-        LocalDateTime ldt1 = events.get(0).getDate();
-        LocalDateTime ldt2 = events.get(events.size() - 1).getDate();
-
-        // Now add in date / time features that span the session
-        sb.append(" sMonth:" + ldt1.getMonthValue() + " sDay:" + ldt1.getDayOfMonth() + " sWeekDay:" + ldt1.getDayOfWeek().getValue()+" sHour:"
-            + ldt1.getHour() + " sMin:" + ldt1.getMinute() + " sSec:" + ldt1.getSecond());
-
-        sb.append(" eMonth:" + ldt2.getMonthValue() + " eDay:" + ldt2.getDayOfMonth() + " eWeekDay:" + ldt2.getDayOfWeek().getValue()+" eHour:"
-            + ldt2.getHour() + " eMin:" + ldt2.getMinute() + " eSec:" + ldt2.getSecond());
-
-        // Now add in # unique items and categories
-        sb.append(" numItems:" + getUniqueItems(events) + " numCategories:" + getUniqueCategories(events));
-
-        // Rough approximation for popular, purchased items
-        sb.append(" viewedPopularItems:" + (didViewPopularItems(events) ? 1.0 : 0.0));
-
-        // Rough approximation for popular, purchased categories
-        sb.append(" viewedPopularCats:" + (didViewPopularCats(events) ? 1.0 : 0.0));
-        
-        // Rough approximation for content similarity by category
-        sb.append(" catSimilarity:" + calcCatSimilarity(events));
-
-
-        // Now add in the events themselves
-        int eLimit = NUM_EVENTS;
-        if (events.size() < NUM_EVENTS) {
-          eLimit = events.size();
-        }
-        for (int k = 0; k < eLimit; k++) {
-          Event e = events.get(k);
-          Event nextE = null;
-          if (k < events.size() - 1) {
-            nextE = events.get(k + 1);
-          }
-
-          long duration = 100L;
-          if (nextE != null) {
-            duration = calculateDuration(e, nextE);
-          }
-
-          LocalDateTime ldt = e.getDate();
-          sb.append(" |Event" + k + " mth:" + ldt.getMonthValue() + " day:" + ldt.getDayOfMonth()+ " hour:" +ldt.getHour()+" minute:" +ldt.getMinute()+" second:" +ldt.getSecond());
-          sb.append(" " +e.getItemId()+"-itemId:1.0" + " dwellTime:" + duration);
-          if (e instanceof Click) {
-            Click c = (Click) e;
-            sb.append(
-                " " + c.getCategoryId()+ "-catId:1.0" + " special:" + (c.isSpecial() ? "1.0" : "0.0"));
-          }
-        }
-        sb.append("\n");
-        out.write(sb.toString());
         i++;
         currTime = System.currentTimeMillis();
         if ((currTime - startTime) > LOG_INTERVAL) {
@@ -150,32 +97,110 @@ public class YoochooseParser {
           startTime = currTime;
           j = i;
         }
-
       }
-
     } catch (IOException e) {
       LOG.error("Error writing vw file", e);
     }
+  }
 
+  private void output(Entry<Integer, List<Event>> entry, PrintWriter out, boolean isTrain) {
+    List<Event> events = entry.getValue();
+    StringBuilder sb = new StringBuilder();
+    Event lastE = events.get(events.size() - 1);
+
+    // Label [Importance] [Base] ['Tag]
+    if (isTrain) {
+      if (lastE instanceof Purchase) {
+        // Bump the weight of purchaser example - improves (TP - FP) by
+        // ~16.67% (28546 vs 24,466) on the full training set
+        sb.append("1 1.0");
+      } else {
+        sb.append("0 1.0");
+      }
+      sb.append(" '" + entry.getKey() + "|");
+    } else {
+      sb.append("'" + entry.getKey() + "|");
+    }
+
+    sb.append("AggregateFeatures numClicks:" + events.size() + " lifespan:"
+        + calculateDuration(events.get(0), events.get(events.size() - 1)));
+
+    LocalDateTime ldt1 = events.get(0).getDate();
+    LocalDateTime ldt2 = events.get(events.size() - 1).getDate();
+
+    // Now add in date / time features that span the session
+    sb.append(" sMonth:" + ldt1.getMonthValue() + " sDay:" + ldt1.getDayOfMonth() + " sWeekDay:"
+        + ldt1.getDayOfWeek().getValue() + " sHour:" + ldt1.getHour() + " sMin:"
+        + ldt1.getMinute() + " sSec:" + ldt1.getSecond());
+
+    sb.append(" eMonth:" + ldt2.getMonthValue() + " eDay:" + ldt2.getDayOfMonth() + " eWeekDay:"
+        + ldt2.getDayOfWeek().getValue() + " eHour:" + ldt2.getHour() + " eMin:"
+        + ldt2.getMinute() + " eSec:" + ldt2.getSecond());
+
+    // Now add in # unique items and categories
+    sb.append(" numItems:" + getUniqueItems(events) + " numCategories:"
+        + getUniqueCategories(events));
+
+    // Rough approximation for popular, purchased items
+    sb.append(" viewedPopularItems:" + (didViewPopularItems(events) ? 1.0 : 0.0));
+
+    // Rough approximation for popular, purchased categories
+    sb.append(" viewedPopularCats:" + (didViewPopularCats(events) ? 1.0 : 0.0));
+
+    // Rough approximation for content similarity by category
+    sb.append(" catSimilarity:" + calcCatSimilarity(events));
+
+
+    // Now add in the events themselves
+    int eLimit = NUM_EVENTS;
+    if (events.size() < NUM_EVENTS) {
+      eLimit = events.size();
+    }
+    for (int k = 0; k < eLimit; k++) {
+      Event e = events.get(k);
+      Event nextE = null;
+      if (k < events.size() - 1) {
+        nextE = events.get(k + 1);
+      }
+
+      long duration = 100L;
+      if (nextE != null) {
+        duration = calculateDuration(e, nextE);
+      }
+
+      LocalDateTime ldt = e.getDate();
+      sb.append(" |Event" + k + " mth:" + ldt.getMonthValue() + " day:" + ldt.getDayOfMonth()
+          + " hour:" + ldt.getHour() + " minute:" + ldt.getMinute() + " second:"
+          + ldt.getSecond());
+      sb.append(" " + e.getItemId() + "-itemId:1.0" + " dwellTime:" + duration);
+      if (e instanceof Click) {
+        Click c = (Click) e;
+        sb.append(" " + c.getCategoryId() + "-catId:1.0" + " special:"
+            + (c.isSpecial() ? "1.0" : "0.0"));
+      }
+    }
+    sb.append("\n");
+    out.write(sb.toString());
+    
   }
 
   private int calcCatSimilarity(List<Event> events) {
-    
-    int rVal=0;
+
+    int rVal = 0;
     similar.clear();
-    for (Event e : events){
-      if (e instanceof Click){
-        Click c = (Click)e;
+    for (Event e : events) {
+      if (e instanceof Click) {
+        Click c = (Click) e;
         int quantity = 1;
-        if (similar.containsKey(c.getCategoryId())){
-          quantity = similar.get(c.getCategoryId())+1;
+        if (similar.containsKey(c.getCategoryId())) {
+          quantity = similar.get(c.getCategoryId()) + 1;
         }
         similar.put(c.getCategoryId(), quantity);
       }
-      
+
       Map<Integer, Integer> sorted = sortByValue(Collections.reverseOrder(), 1_000, similar);
-      for (Map.Entry<Integer, Integer> entry : sorted.entrySet()){
-        //This should be the highest frequency of category
+      for (Map.Entry<Integer, Integer> entry : sorted.entrySet()) {
+        // This should be the highest frequency of category
         return entry.getValue();
       }
     }
@@ -183,30 +208,30 @@ public class YoochooseParser {
   }
 
   private boolean didViewPopularItems(List<Event> events) {
-    for (Event e : events){
-      //This code works iff analyse() called (side-effect)..
-      //TODO refactor this
-      if (itemsPurchased.containsValue(e.getItemId())){
+    for (Event e : events) {
+      // This code works iff analyse() called (side-effect)..
+      // TODO refactor this
+      if (itemsPurchased.containsValue(e.getItemId())) {
         return true;
       }
     }
     return false;
   }
-  
+
   private boolean didViewPopularCats(List<Event> events) {
-    for (Event e : events){
-      //This code works iff analyse() called (side-effect)..
-      //TODO refactor this
-      if (e instanceof Click){
-        Click c = (Click)e;
-        if (categoriesBrowsed.containsValue(c.getCategoryId())){
+    for (Event e : events) {
+      // This code works iff analyse() called (side-effect)..
+      // TODO refactor this
+      if (e instanceof Click) {
+        Click c = (Click) e;
+        if (categoriesBrowsed.containsValue(c.getCategoryId())) {
           return true;
         }
       }
     }
     return false;
   }
-  
+
 
   private int getUniqueCategories(List<Event> events) {
     for (Event e : events) {
@@ -245,7 +270,7 @@ public class YoochooseParser {
     return ldt1.until(ldt2, ChronoUnit.SECONDS);
   }
 
-  public void analyse(Map<Integer, List<Event>> visitors) {
+  public void analyse() {
     // I know 262 is the max from inspecting the data, hence why we use 270 here..
     Map<Integer, Integer> eventBuckets = new HashMap<>(270);
 
@@ -258,10 +283,11 @@ public class YoochooseParser {
     long unknownEventType = 0;
     long avgEvents = 0;
     int maxEvents = 0;
-    for (Map.Entry<Integer, List<Event>> e : visitors.entrySet()) {
+    //TODO support both clickers and buyers..
+    for (Map.Entry<Integer, List<Event>> e : clickers.entrySet()) {
       List<Event> events = e.getValue();
-      
-      //Just looking for rogue / not-so-useful data
+
+      // Just looking for rogue / not-so-useful data
       if (e.getValue().size() <= 1) {
         Event event = e.getValue().get(0);
         if (event instanceof Click) {
@@ -294,19 +320,19 @@ public class YoochooseParser {
           itemCount = itemsPurchased.get(e2.getItemId()) + 1;
         }
         itemsPurchased.put(e2.getItemId(), itemCount);
-        
+
         // We only count events for purchasers
         eventBuckets.put(numEvents, count);
         if (mins > purchaserMins) {
           purchaserMins = mins;
         }
-        //Only calculate popular cats for purchasers
-        for (Event event : events){
-          if (event instanceof Click){
+        // Only calculate popular cats for purchasers
+        for (Event event : events) {
+          if (event instanceof Click) {
             Click c = (Click) event;
             int quantity = 1;
-            if (categoriesBrowsed.containsKey(c.getCategoryId())){
-              quantity = categoriesBrowsed.get(c.getCategoryId())+1;
+            if (categoriesBrowsed.containsKey(c.getCategoryId())) {
+              quantity = categoriesBrowsed.get(c.getCategoryId()) + 1;
             }
             categoriesBrowsed.put(c.getCategoryId(), quantity);
           }
@@ -314,21 +340,22 @@ public class YoochooseParser {
 
       }
     }
-    //Get rid of 0 as it is not a real category - it represents data not present
+    // Get rid of 0 as it is not a real category - it represents data not present
     categoriesBrowsed.remove(0);
     LOG.info(
         "All max: {} secs, purchasers max: {} secs, avg: {} secs, single click {}, single purchase {}, unknown {}, max events {}, avg events {}",
-        allMins, purchaserMins, (float) average / visitors.size(), singleClick, singlePurchase,
-        unknownEventType, maxEvents, (float) avgEvents / visitors.size());
+        allMins, purchaserMins, (float) average / clickers.size(), singleClick, singlePurchase,
+        unknownEventType, maxEvents, (float) avgEvents / clickers.size());
     // LOG.info("Top 70 Event buckets are: \n{}", output(eventBuckets, numPurchasers, 70));
-    //We use this map later to calculate a popularity feature in the output file
+    // We use this map later to calculate a popularity feature in the output file
     itemsPurchased = sortByValue(Collections.reverseOrder(), 400, itemsPurchased);
     categoriesBrowsed = sortByValue(Collections.reverseOrder(), 100, categoriesBrowsed);
     LOG.info("Top 400 items purchased: \n{}", output(itemsPurchased));
     LOG.info("Top 100 cats browsed: \n{}", output(categoriesBrowsed));
   }
-  
-  private Map<Integer, Integer> sortByValue(Comparator<Integer> inC, int inLimit, Map<Integer, Integer> inSrc){
+
+  private Map<Integer, Integer> sortByValue(Comparator<Integer> inC, int inLimit,
+      Map<Integer, Integer> inSrc) {
     // Sort the map..
     Map<Integer, Integer> sorted = new TreeMap<>(inC);
     for (Map.Entry<Integer, Integer> e : inSrc.entrySet()) {
@@ -336,16 +363,16 @@ public class YoochooseParser {
       // as we now want to sort by frequency and not unique ID anymore
       sorted.put(e.getValue(), e.getKey());
     }
-    //Now we remove anything after the limit
+    // Now we remove anything after the limit
     Map<Integer, Integer> rVal = new TreeMap<>(inC);
     for (Map.Entry<Integer, Integer> e : sorted.entrySet()) {
-      if (inLimit <= 0){
+      if (inLimit <= 0) {
         break;
       }
       rVal.put(e.getKey(), e.getValue());
       inLimit--;
     }
-    
+
     return rVal;
   }
 
@@ -353,8 +380,7 @@ public class YoochooseParser {
     StringBuilder sb = new StringBuilder();
 
     for (Map.Entry<Integer, Integer> e : inBuckets.entrySet()) {
-      sb.append(
-          e.getKey() + ":" + e.getValue() + "\n");
+      sb.append(e.getKey() + ":" + e.getValue() + "\n");
     }
     return sb.toString();
   }
@@ -362,12 +388,10 @@ public class YoochooseParser {
   /**
    * Handles the clicks, buys, test and solution *.dat files in the yoochoose 7z file.
    * 
-   * @param visitors
    * @param inFname
    * @param inT
    */
-  public void buildMap(Map<Integer, List<Event>> visitors, String inFname, Event.Type inT,
-      char inSeparatorChar) {
+  public void buildMap(String inFname, Event.Type inT, char inSeparatorChar) {
 
     String format = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'";
     DateTimeFormatter dtf = DateTimeFormatter.ofPattern(format);
@@ -381,7 +405,7 @@ public class YoochooseParser {
     try (CSVReader reader = new CSVReader(new FileReader(inFname), inSeparatorChar)) {
       while ((nextLine = reader.readNext()) != null) {
 
-        // Handle dodgy blank lines - seem to only be in solution.dat
+        // Handle blank lines - seem to only be in solution.dat
         if ("".equals(nextLine[0])) {
           continue;
         }
@@ -404,7 +428,7 @@ public class YoochooseParser {
             } else {
               c.setCategoryId(Integer.parseInt(nextLine[3]));
             }
-            add(visitors, c, vId);
+            add(c, vId);
             break;
           case PURCHASE:
             Purchase p = new Purchase();
@@ -416,7 +440,7 @@ public class YoochooseParser {
             } catch (ArrayIndexOutOfBoundsException e) {
               // Expected for solution.dat - I hate myself for writing this code
             }
-            add(visitors, p, vId);
+            move(p, vId);
             break;
           default:
             LOG.error("Unsupported event type encountered");
@@ -433,8 +457,8 @@ public class YoochooseParser {
         }
       }
 
-      LOG.info("{} data lines -> {} visitors, processed in {} secs", i, visitors.keySet().size(),
-          (currTime - startTime1) / 1000);
+      LOG.info("{} data lines -> {} visitors, processed in {} secs", i,
+          (clickers.keySet().size() + buyers.keySet().size()), (currTime - startTime1) / 1000);
     } catch (Exception ie) {
       LOG.error("Error at line {} in file", i, ie);
       LOG.error("Complete line is: '{},{},{},{}'", nextLine[0], nextLine[1], nextLine[2],
@@ -444,13 +468,23 @@ public class YoochooseParser {
 
   }
 
-  private void add(Map<Integer, List<Event>> visitors, Event inE, int vId) {
-    if (visitors.containsKey(vId)) {
-      visitors.get(vId).add(inE);
+  private void add(Event inE, int vId) {
+    if (clickers.containsKey(vId)) {
+      clickers.get(vId).add(inE);
     } else {
       List<Event> nL = new ArrayList<>();
       nL.add(inE);
-      visitors.put(vId, nL);
+      clickers.put(vId, nL);
+    }
+  }
+
+  private void move(Event inE, int vId) {
+    if (clickers.containsKey(vId)) {
+      buyers.put(vId, clickers.remove(vId));
+      buyers.get(vId).add(inE);
+    }
+    else {
+      buyers.get(vId).add(inE);
     }
   }
 
