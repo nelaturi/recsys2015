@@ -115,7 +115,7 @@ public class YoochooseParser {
         // ~16.67% (28546 vs 24,466) on the full training set
         sb.append("1 1.0");
       } else {
-        sb.append("0 1.0");
+        sb.append("-1 1.0");
       }
       sb.append(" '" + entry.getKey() + "|");
     } else {
