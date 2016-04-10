@@ -29,8 +29,8 @@ public class YoochooseTest {
   public void buildLibSvmTrainFileTest() {
 
     YoochooseParser p = new YoochooseParser(9_000_000, 500_000, Format.LIBSVM, Mode.TRAIN);
-    p.buildMap("../../data/recsys2015/yoochoose-clicks2.dat", Event.Type.CLICK, ',');
-    p.buildMap("../../data/recsys2015/yoochoose-buys2.dat", Event.Type.PURCHASE, ',');
+    p.buildMap("../../data/recsys2015/yoochoose-clicks.dat", Event.Type.CLICK, ',');
+    p.buildMap("../../data/recsys2015/yoochoose-buys.dat", Event.Type.PURCHASE, ',');
     p.analyse();
 
     // Build the VW file based on our analysis
