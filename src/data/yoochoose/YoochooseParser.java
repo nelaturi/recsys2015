@@ -48,9 +48,23 @@ public class YoochooseParser {
 
   private static final long LOG_INTERVAL = 5_000L;
 
+  private static final String BUYER_LABEL = "1";
+
+  private static final String CLICKER_LABEL = "0";
+
+  private static final String VW_DELIMITER = "|";
+
+  private static final String FEAT_SEP = " ";
+
+  private static final String FEAT_VAL_SEP = ":";
+
   private Set<Integer> uniques;
 
   private Map<Integer, Integer> similar;
+
+  private Map<String, Integer> labelMappings;
+
+  private int labelCounter;
 
   private Map<Integer, Integer> itemsPurchased;
 
@@ -59,7 +73,12 @@ public class YoochooseParser {
   private Map<Integer, List<Event>> clickers;
   private Map<Integer, List<Event>> buyers;
 
-  public YoochooseParser(int inClickers, int inBuyers) {
+  private final Mode mode;
+
+  private final Format format;
+
+
+  public YoochooseParser(int inClickers, int inBuyers, Format inF, Mode inM) {
     uniques = new HashSet<>();
     itemsPurchased = new HashMap<>();
     categoriesBrowsed = new HashMap<>();
@@ -67,27 +86,33 @@ public class YoochooseParser {
     similar = new TreeMap<>(Collections.reverseOrder());
     clickers = new HashMap<>(inClickers);
     buyers = new HashMap<>(inBuyers);
-
+    labelMappings = new HashMap<>();
+    mode = inM;
+    format = inF;
   }
 
-  public void buildSaveVwFile(String inFName, boolean isTrain) {
+  public void output(String inFName) {
     LOG.info("Creating VW file from data loaded");
     long startTime = System.currentTimeMillis();
     long currTime = startTime;
     int i = 0;
     int j = 0;
-    
+
 
     try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(inFName)));) {
-      //We need a separate iterator for buyers..
+      // We need a separate iterator for buyers..
       Iterator<Entry<Integer, List<Event>>> buyerEntries = buyers.entrySet().iterator();
       for (Map.Entry<Integer, List<Event>> clickerEntry : clickers.entrySet()) {
-        output(clickerEntry, out, isTrain);
-        if (isTrain){
-          if (!buyerEntries.hasNext()){
+        writeSession(clickerEntry, out, format, mode);
+
+        // Only iterate over buyers collxn in TRAIN mode - in TEST mode it will be empty
+        if (Mode.TRAIN.equals(mode)) {
+          if (!buyerEntries.hasNext()) {
+            // refresh the buyer iterator if we've exhausted it
+            // as there are always far more (95:5) clickers than buyers
             buyerEntries = buyers.entrySet().iterator();
           }
-          output(buyerEntries.next(), out, isTrain);
+          writeSession(buyerEntries.next(), out, format, mode);
         }
         i++;
         currTime = System.currentTimeMillis();
@@ -103,55 +128,31 @@ public class YoochooseParser {
     }
   }
 
-  private void output(Entry<Integer, List<Event>> entry, PrintWriter out, boolean isTrain) {
+  private void writeSession(Entry<Integer, List<Event>> entry, PrintWriter out, Format inF,
+      Mode inM) {
     List<Event> events = entry.getValue();
     StringBuilder sb = new StringBuilder();
     Event lastE = events.get(events.size() - 1);
 
-    // Label [Importance] [Base] ['Tag]
-    if (isTrain) {
-      if (lastE instanceof Purchase) {
-        // Bump the weight of purchaser example - improves (TP - FP) by
-        // ~16.67% (28546 vs 24,466) on the full training set
-        sb.append("1 1.0");
-      } else {
-        sb.append("2 1.0");
-      }
-      sb.append(" '" + entry.getKey() + "|");
-    } else {
-      sb.append("'" + entry.getKey() + "|");
+    Integer visitorId = entry.getKey();
+
+    boolean buyer = false;
+    if (lastE instanceof Purchase) {
+      buyer = true;
     }
+    sb.append(buildStart(buyer, inM, inF, visitorId));
 
-    sb.append("AggregateFeatures numClicks:" + events.size() + " lifespan:"
-        + calculateDuration(events.get(0), events.get(events.size() - 1)));
-
-    LocalDateTime ldt1 = events.get(0).getDate();
-    LocalDateTime ldt2 = events.get(events.size() - 1).getDate();
-
-    // Now add in date / time features that span the session
-    sb.append(" sMonth:" + ldt1.getMonthValue() + " sDay:" + ldt1.getDayOfMonth() + " sWeekDay:"
-        + ldt1.getDayOfWeek().getValue() + " sHour:" + ldt1.getHour() + " sMin:"
-        + ldt1.getMinute() + " sSec:" + ldt1.getSecond());
-
-    sb.append(" eMonth:" + ldt2.getMonthValue() + " eDay:" + ldt2.getDayOfMonth() + " eWeekDay:"
-        + ldt2.getDayOfWeek().getValue() + " eHour:" + ldt2.getHour() + " eMin:"
-        + ldt2.getMinute() + " eSec:" + ldt2.getSecond());
-
-    // Now add in # unique items and categories
-    sb.append(" numItems:" + getUniqueItems(events) + " numCategories:"
-        + getUniqueCategories(events));
-
-    // Rough approximation for popular, purchased items
-    sb.append(" viewedPopularItems:" + (didViewPopularItems(events) ? 1.0 : 0.0));
-
-    // Rough approximation for popular, purchased categories
-    sb.append(" viewedPopularCats:" + (didViewPopularCats(events) ? 1.0 : 0.0));
-
-    // Rough approximation for content similarity by category
-    sb.append(" catSimilarity:" + calcCatSimilarity(events));
-
+    sb.append(buildSessionFeatures(inF, events));
 
     // Now add in the events themselves
+
+    sb.append(buildEvents(inF, events));
+    sb.append("\n");
+    out.write(sb.toString());
+  }
+
+  private StringBuilder buildEvents(Format inF, List<Event> events) {
+    StringBuilder sb = new StringBuilder();
     int eLimit = NUM_EVENTS;
     if (events.size() < NUM_EVENTS) {
       eLimit = events.size();
@@ -169,19 +170,102 @@ public class YoochooseParser {
       }
 
       LocalDateTime ldt = e.getDate();
-      sb.append(" |Event" + k + " mth:" + ldt.getMonthValue() + " day:" + ldt.getDayOfMonth()
-          + " hour:" + ldt.getHour() + " minute:" + ldt.getMinute() + " second:"
-          + ldt.getSecond());
-      sb.append(" " + e.getItemId() + "-itemId:1.0" + " dwellTime:" + duration);
+      String prefix = "";
+      if (Format.VW.equals(inF)){
+        sb.append("|Event" + k+FEAT_SEP);
+      } else {
+        prefix += "Event" + k+FEAT_SEP;
+      }
+      append(sb, prefix+"mth", ldt.getMonthValue());
+      append(sb, prefix+"day", ldt.getDayOfMonth());
+      append(sb, prefix+"hour", ldt.getHour());
+      append(sb, prefix+"minute", ldt.getMinute());
+      append(sb, prefix+"second", ldt.getSecond());
+      append(sb, prefix+e.getItemId() + "-itemId", 1.0);
+      append(sb, prefix+"dwellTime", duration);
       if (e instanceof Click) {
         Click c = (Click) e;
-        sb.append(" " + c.getCategoryId() + "-catId:1.0" + " special:"
-            + (c.isSpecial() ? "1.0" : "0.0"));
+        append(sb, prefix+c.getCategoryId()+"-catId", 1.0);
+        append(sb, prefix+"special", c.isSpecial() ? "1.0" : "0.0");
       }
     }
-    sb.append("\n");
-    out.write(sb.toString());
-    
+    return sb;
+  }
+
+  private StringBuilder buildSessionFeatures(Format inF, List<Event> events) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(mapLabel("AggregateFeatures numClicks") + FEAT_VAL_SEP + events.size() + FEAT_SEP
+        + mapLabel("lifespan") + FEAT_VAL_SEP
+        + calculateDuration(events.get(0), events.get(events.size() - 1)));
+
+    LocalDateTime ldt1 = events.get(0).getDate();
+    LocalDateTime ldt2 = events.get(events.size() - 1).getDate();
+
+    // Now add in date / time features that span the session
+    append(sb, "sMonth", ldt1.getMonthValue());
+    append(sb, "sDay", ldt1.getDayOfMonth());
+    append(sb, "sWeekDay", ldt1.getDayOfWeek().getValue());
+    append(sb, "sHour", ldt1.getHour());
+    append(sb, "sMin", ldt1.getMinute());
+    append(sb, "sSec", ldt1.getSecond());
+
+    append(sb, "eMonth", ldt2.getMonthValue());
+    append(sb, "eDay", ldt2.getDayOfMonth());
+    append(sb, "eWeekDay", ldt2.getDayOfWeek().getValue());
+    append(sb, "eHour", ldt2.getHour());
+    append(sb, "eMin", ldt2.getMinute());
+    append(sb, "eSec", ldt2.getSecond());
+
+    // Now add in # unique items and categories
+    append(sb, "numItems", getUniqueItems(events));
+    append(sb, "numCategories", getUniqueCategories(events));
+
+
+    // Rough approximation for popular, purchased items
+    append(sb, "viewedPopularItems", didViewPopularItems(events) ? 1.0 : 0.0);
+
+    // Rough approximation for popular, purchased categories
+    append(sb, "viewedPopularCats", didViewPopularCats(events) ? 1.0 : 0.0);
+
+    // Rough approximation for content similarity by category
+    append(sb, "catSimilarity", calcCatSimilarity(events));
+
+    return sb;
+  }
+
+  private void append(StringBuilder sb, String inL, Object inValue) {
+    sb.append(FEAT_SEP + mapLabel(inL) + FEAT_VAL_SEP + inValue.toString());
+  }
+
+  private String mapLabel(String inL) {
+    switch (format) {
+      case VW:
+        return inL;
+      case LIBSVM:
+        if (!labelMappings.containsKey(inL)) {
+          labelMappings.put(inL, labelCounter++);
+        }
+        return labelMappings.get(inL).toString();
+      default:
+        return "";
+    }
+  }
+
+  private String buildStart(boolean isBuyer, Mode inM, Format inF, Integer inVisitorId) {
+    String label = isBuyer ? BUYER_LABEL : CLICKER_LABEL;
+    switch (inF) {
+      case VW:
+        if (Mode.TRAIN.equals(inM)) {
+          //Label [Importance] [Base] ['Tag]
+          return label + " 1.0 '" + inVisitorId + VW_DELIMITER;
+        } else {
+          return "'" + inVisitorId + VW_DELIMITER;
+        }
+      case LIBSVM:
+        return label + FEAT_SEP;
+      default:
+        return "";
+    }
   }
 
   private int calcCatSimilarity(List<Event> events) {
@@ -232,7 +316,6 @@ public class YoochooseParser {
     return false;
   }
 
-
   private int getUniqueCategories(List<Event> events) {
     for (Event e : events) {
       if (e instanceof Click) {
@@ -257,7 +340,6 @@ public class YoochooseParser {
   }
 
   private long calculateDuration(Event e1, Event e2) {
-
     if (e1 == null || e2 == null) {
       return 0l;
     }
@@ -283,7 +365,7 @@ public class YoochooseParser {
     long unknownEventType = 0;
     long avgEvents = 0;
     int maxEvents = 0;
-    //TODO support both clickers and buyers..
+    // TODO support both clickers and buyers..
     for (Map.Entry<Integer, List<Event>> e : clickers.entrySet()) {
       List<Event> events = e.getValue();
 
@@ -350,8 +432,8 @@ public class YoochooseParser {
     // We use this map later to calculate a popularity feature in the output file
     itemsPurchased = sortByValue(Collections.reverseOrder(), 400, itemsPurchased);
     categoriesBrowsed = sortByValue(Collections.reverseOrder(), 100, categoriesBrowsed);
-    LOG.info("Top 400 items purchased: \n{}", output(itemsPurchased));
-    LOG.info("Top 100 cats browsed: \n{}", output(categoriesBrowsed));
+    LOG.info("Top 400 items purchased: \n{}", mapToString(itemsPurchased));
+    LOG.info("Top 100 cats browsed: \n{}", mapToString(categoriesBrowsed));
   }
 
   private Map<Integer, Integer> sortByValue(Comparator<Integer> inC, int inLimit,
@@ -376,7 +458,7 @@ public class YoochooseParser {
     return rVal;
   }
 
-  private Object output(Map<Integer, Integer> inBuckets) {
+  private Object mapToString(Map<Integer, Integer> inBuckets) {
     StringBuilder sb = new StringBuilder();
 
     for (Map.Entry<Integer, Integer> e : inBuckets.entrySet()) {
@@ -464,8 +546,6 @@ public class YoochooseParser {
       LOG.error("Complete line is: '{},{},{},{}'", nextLine[0], nextLine[1], nextLine[2],
           nextLine[3]);
     }
-
-
   }
 
   private void add(Event inE, int vId) {
@@ -482,10 +562,8 @@ public class YoochooseParser {
     if (clickers.containsKey(vId)) {
       buyers.put(vId, clickers.remove(vId));
       buyers.get(vId).add(inE);
-    }
-    else {
+    } else {
       buyers.get(vId).add(inE);
     }
   }
-
 }
