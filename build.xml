@@ -51,8 +51,8 @@
 	<target name="test" depends="compile-tests" description="Run the test suite">
 		<mkdir dir="${reports.dir}" />
 			<junit printsummary="yes" haltonfailure="yes" fork="true" forkmode="once" showoutput="true">
-        <jvmarg value="-Xms8G" />
-        <jvmarg value="-Xmx8G" />
+        <jvmarg value="-Xms10G" />
+        <jvmarg value="-Xmx10G" />
 
 				<classpath>
 					<pathelement location="${build}" />

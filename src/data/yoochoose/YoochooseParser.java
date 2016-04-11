@@ -92,7 +92,7 @@ public class YoochooseParser {
   }
 
   public void output(String inFName) {
-    LOG.info("Creating VW file from data loaded");
+    LOG.info("Creating {} file from data loaded", format);
     long startTime = System.currentTimeMillis();
     long currTime = startTime;
     int i = 0;
