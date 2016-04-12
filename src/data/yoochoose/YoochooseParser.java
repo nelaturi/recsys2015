@@ -77,8 +77,10 @@ public class YoochooseParser {
 
   private final Format format;
 
+  private final boolean balanced;
 
-  public YoochooseParser(int inClickers, int inBuyers, Format inF, Mode inM) {
+
+  public YoochooseParser(int inClickers, int inBuyers, Format inF, Mode inM, boolean inBalanced) {
     uniques = new HashSet<>();
     itemsPurchased = new HashMap<>();
     categoriesBrowsed = new HashMap<>();
@@ -89,6 +91,7 @@ public class YoochooseParser {
     labelMappings = new HashMap<>();
     mode = inM;
     format = inF;
+    balanced = inBalanced;
   }
 
   public void output(String inFName) {
@@ -98,23 +101,30 @@ public class YoochooseParser {
     int i = 0;
     int j = 0;
 
-
-    try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(inFName)));) {
-      // We need a separate iterator for buyers..
+    try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(inFName)));
+        PrintWriter out2 =
+            new PrintWriter(new BufferedWriter(new FileWriter(inFName + ".label")))) {
+      // We need a separate iterator for buyers
       Iterator<Entry<Integer, List<Event>>> buyerEntries = buyers.entrySet().iterator();
       for (Map.Entry<Integer, List<Event>> clickerEntry : clickers.entrySet()) {
         writeSession(clickerEntry, out, format, mode);
+        writeLabel(clickerEntry.getKey(), out2);
+        i++;
 
         // Only iterate over buyers collxn in TRAIN mode - in TEST mode it will be empty
         if (Mode.TRAIN.equals(mode)) {
-          if (!buyerEntries.hasNext()) {
-            // refresh the buyer iterator if we've exhausted it
+          if (!buyerEntries.hasNext() && balanced) {
+            // In balanced mode, refresh the buyer iterator if we've exhausted it
             // as there are always far more (95:5) clickers than buyers
             buyerEntries = buyers.entrySet().iterator();
           }
-          writeSession(buyerEntries.next(), out, format, mode);
+          if (buyerEntries.hasNext()) {
+            Map.Entry<Integer, List<Event>> buyerEntry = buyerEntries.next();
+            writeSession(buyerEntry, out, format, mode);
+            writeLabel(buyerEntry.getKey(), out2);
+            i++;
+          }
         }
-        i++;
         currTime = System.currentTimeMillis();
         if ((currTime - startTime) > LOG_INTERVAL) {
           LOG.info("{} sessions processed (rate: {}/sec)", i,
@@ -124,8 +134,14 @@ public class YoochooseParser {
         }
       }
     } catch (IOException e) {
-      LOG.error("Error writing vw file", e);
+      LOG.error("Error writing file", e);
     }
+  }
+
+  private void writeLabel(Integer key, PrintWriter out2) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(key + "\n");
+    out2.write(sb.toString());
   }
 
   private void writeSession(Entry<Integer, List<Event>> entry, PrintWriter out, Format inF,
@@ -145,10 +161,15 @@ public class YoochooseParser {
     sb.append(buildSessionFeatures(inF, events));
 
     // Now add in the events themselves
-
     sb.append(buildEvents(inF, events));
+
     sb.append("\n");
     out.write(sb.toString());
+
+    // Write out the session ID as a comment for LIBSVM
+    StringBuilder sb2 = new StringBuilder();
+    sb2.append(visitorId);
+
   }
 
   private StringBuilder buildEvents(Format inF, List<Event> events) {
@@ -171,22 +192,22 @@ public class YoochooseParser {
 
       LocalDateTime ldt = e.getDate();
       String prefix = "";
-      if (Format.VW.equals(inF)){
-        sb.append("|Event" + k+FEAT_SEP);
+      if (Format.VW.equals(inF)) {
+        sb.append("|Event" + k + FEAT_SEP);
       } else {
-        prefix += "Event" + k+FEAT_SEP;
+        prefix += "Event" + k + FEAT_SEP;
       }
-      append(sb, prefix+"mth", ldt.getMonthValue());
-      append(sb, prefix+"day", ldt.getDayOfMonth());
-      append(sb, prefix+"hour", ldt.getHour());
-      append(sb, prefix+"minute", ldt.getMinute());
-      append(sb, prefix+"second", ldt.getSecond());
-      append(sb, prefix+e.getItemId() + "-itemId", 1.0);
-      append(sb, prefix+"dwellTime", duration);
+      append(sb, prefix + "mth", ldt.getMonthValue());
+      append(sb, prefix + "day", ldt.getDayOfMonth());
+      append(sb, prefix + "hour", ldt.getHour());
+      append(sb, prefix + "minute", ldt.getMinute());
+      append(sb, prefix + "second", ldt.getSecond());
+      append(sb, prefix + e.getItemId() + "-itemId", 1.0);
+      append(sb, prefix + "dwellTime", duration);
       if (e instanceof Click) {
         Click c = (Click) e;
-        append(sb, prefix+c.getCategoryId()+"-catId", 1.0);
-        append(sb, prefix+"special", c.isSpecial() ? "1.0" : "0.0");
+        append(sb, prefix + c.getCategoryId() + "-catId", 1.0);
+        append(sb, prefix + "special", c.isSpecial() ? "1.0" : "0.0");
       }
     }
     return sb;
@@ -256,7 +277,7 @@ public class YoochooseParser {
     switch (inF) {
       case VW:
         if (Mode.TRAIN.equals(inM)) {
-          //Label [Importance] [Base] ['Tag]
+          // Label [Importance] [Base] ['Tag]
           return label + " 1.0 '" + inVisitorId + VW_DELIMITER;
         } else {
           return "'" + inVisitorId + VW_DELIMITER;
