@@ -34,9 +34,11 @@ import au.com.bytecode.opencsv.CSVReader;
  * 
  * And the solution is here: http://s3-eu-west-1.amazonaws.com/yc-rdata/yoochoose-solution.dat
  * 
- * We generate one file type currently - Vowpal Wabbit:
+ * We generate two file types currently - Vowpal Wabbit and LIBSVM (used by XGBoost):
  * 
  * VW format: https://github.com/JohnLangford/vowpal_wabbit/wiki/Input-format
+ * 
+ * LIBSVM format: https://github.com/dmlc/xgboost/blob/master/doc/input_format.md
  * 
  * @author hsheil
  */
@@ -69,6 +71,10 @@ public class YoochooseParser {
   private Map<Integer, Integer> itemsPurchased;
 
   private Map<Integer, Integer> categoriesBrowsed;
+  
+  private Map<Integer, Integer> mostPopularItems;
+  
+  private Map<Integer, Integer> mostPopularCategories;
 
   private Map<Integer, List<Event>> clickers;
   private Map<Integer, List<Event>> buyers;
@@ -84,6 +90,8 @@ public class YoochooseParser {
     uniques = new HashSet<>();
     itemsPurchased = new HashMap<>();
     categoriesBrowsed = new HashMap<>();
+    mostPopularItems = new HashMap<>();
+    mostPopularCategories = new HashMap<>();
     // We always want the highest count first
     similar = new TreeMap<>(Collections.reverseOrder());
     clickers = new HashMap<>(inClickers);
@@ -158,7 +166,7 @@ public class YoochooseParser {
     }
     sb.append(buildStart(buyer, inM, inF, visitorId));
 
-    //Output session-level features
+    // Output session-level features
     sb.append(buildSessionFeatures(inF, events));
 
     // Now transform and output the events themselves
@@ -204,6 +212,7 @@ public class YoochooseParser {
       append(sb, prefix + "minute", ldt.getMinute());
       append(sb, prefix + "second", ldt.getSecond());
       append(sb, prefix + e.getItemId() + "-itemId", 1);
+      append(sb, prefix + e.getItemId() + "item-was-purchased", wasPurchased(e.getItemId()) ? 1 : 0);
       append(sb, prefix + "dwellTime", duration);
       if (e instanceof Click) {
         Click c = (Click) e;
@@ -215,24 +224,29 @@ public class YoochooseParser {
     return sb;
   }
 
+  private boolean wasPurchased(int itemId) {
+    return itemsPurchased.containsKey(itemId);
+  }
+
   /**
    * Simplifies event categories into 4 simple buckets - brand, 1 - 12, special and not present
+   * 
    * @param inC
    * @return
    */
   private int simplifyCategory(Click inC) {
     int categoryId = inC.getCategoryId();
-    if (categoryId == 0){
-      //Data not present
+    if (categoryId == 0) {
+      // Data not present
       return 1;
-    } else if (categoryId < 12 && categoryId > 0){
-      //One of 12
+    } else if (categoryId < 12 && categoryId > 0) {
+      // One of 12
       return 2;
-    } else if (inC.isSpecial()){
-      //Special
+    } else if (inC.isSpecial()) {
+      // Special
       return 3;
     } else {
-      //Must be brand
+      // Must be brand
       return 4;
     }
   }
@@ -283,8 +297,9 @@ public class YoochooseParser {
   }
 
   /**
-   * Maps all string inputs into a number space for LIBSVM format. A mapping is used consistently within a run, but is not guaranteed
-   * to be the same across multiple runs.
+   * Maps all string inputs into a number space for LIBSVM format. A mapping is used consistently
+   * within a run, but is not guaranteed to be the same across multiple runs.
+   * 
    * @param inL
    * @return
    */
@@ -303,8 +318,10 @@ public class YoochooseParser {
   }
 
   /**
-   * Create the initial part of each line in the training / test file - [class label], [label importance weighting], [a tag to know which session this line relates to].
-   * All field here are optional as (a) LIBSVM format does not support tags as VW does (xgboost errors and fails to parse), and for test files for both we don't know the labels for sessions. 
+   * Create the initial part of each line in the training / test file - [class label], [label
+   * importance weighting], [a tag to know which session this line relates to]. All field here are
+   * optional as (a) LIBSVM format does not support tags as VW does (xgboost errors and fails to
+   * parse), and for test files for both we don't know the labels for sessions.
    * 
    * @param isBuyer
    * @param inM
@@ -354,9 +371,7 @@ public class YoochooseParser {
 
   private boolean didViewPopularItems(List<Event> events) {
     for (Event e : events) {
-      // This code works iff analyse() called (side-effect)..
-      // TODO refactor this
-      if (itemsPurchased.containsValue(e.getItemId())) {
+      if (mostPopularItems.containsValue(e.getItemId())) {
         return true;
       }
     }
@@ -365,11 +380,9 @@ public class YoochooseParser {
 
   private boolean didViewPopularCats(List<Event> events) {
     for (Event e : events) {
-      // This code works iff analyse() called (side-effect)..
-      // TODO refactor this
       if (e instanceof Click) {
         Click c = (Click) e;
-        if (categoriesBrowsed.containsValue(c.getCategoryId())) {
+        if (mostPopularItems.containsValue(c.getCategoryId())) {
           return true;
         }
       }
@@ -491,10 +504,13 @@ public class YoochooseParser {
         unknownEventType, maxEvents, (float) avgEvents / clickers.size());
     // LOG.info("Top 70 Event buckets are: \n{}", output(eventBuckets, numPurchasers, 70));
     // We use this map later to calculate a popularity feature in the output file
-    itemsPurchased = sortByValue(Collections.reverseOrder(), 400, itemsPurchased);
-    categoriesBrowsed = sortByValue(Collections.reverseOrder(), 100, categoriesBrowsed);
-    LOG.info("Top 400 items purchased: \n{}", mapToString(itemsPurchased));
-    LOG.info("Top 100 cats browsed: \n{}", mapToString(categoriesBrowsed));
+    mostPopularItems = sortByValue(Collections.reverseOrder(), 400, itemsPurchased);
+    mostPopularCategories = sortByValue(Collections.reverseOrder(), 100, categoriesBrowsed);
+    LOG.info("Top 400 items purchased: \n{}", mapToString(mostPopularItems));
+    LOG.info("Top 100 cats browsed: \n{}", mapToString(mostPopularCategories));
+    LOG.info("Unique items purchased: {}", itemsPurchased.size());
+    LOG.info("Unique categories: \n{}", categoriesBrowsed.size());
+
   }
 
   private Map<Integer, Integer> sortByValue(Comparator<Integer> inC, int inLimit,
