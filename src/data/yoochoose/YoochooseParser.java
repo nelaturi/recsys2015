@@ -71,10 +71,14 @@ public class YoochooseParser {
   private Map<Integer, Integer> itemsPurchased;
 
   private Map<Integer, Integer> categoriesBrowsed;
-  
+
   private Map<Integer, Integer> mostPopularItems;
-  
+
+  private Map<Integer, Item> items;
+
   private Map<Integer, Integer> mostPopularCategories;
+
+  private Set<Integer> multiPurchases;
 
   private Map<Integer, List<Event>> clickers;
   private Map<Integer, List<Event>> buyers;
@@ -84,7 +88,6 @@ public class YoochooseParser {
   private final Format format;
 
   private final boolean balanced;
-
 
   public YoochooseParser(int inClickers, int inBuyers, Format inF, Mode inM, boolean inBalanced) {
     uniques = new HashSet<>();
@@ -97,6 +100,8 @@ public class YoochooseParser {
     clickers = new HashMap<>(inClickers);
     buyers = new HashMap<>(inBuyers);
     labelMappings = new HashMap<>();
+    multiPurchases = new HashSet<>();
+    items = new HashMap<>();
     mode = inM;
     format = inF;
     balanced = inBalanced;
@@ -212,16 +217,32 @@ public class YoochooseParser {
       append(sb, prefix + "minute", ldt.getMinute());
       append(sb, prefix + "second", ldt.getSecond());
       append(sb, prefix + e.getItemId() + "-itemId", 1);
-      append(sb, prefix + e.getItemId() + "item-was-purchased", wasPurchased(e.getItemId()) ? 1 : 0);
+      append(sb, prefix + e.getItemId() + "item-was-purchased",
+          wasPurchased(e.getItemId()) ? 1 : 0);
+      append(sb, prefix + e.getItemId() + "item-was-multi-purchase",
+          wasMultiPurchase(e.getItemId()) ? 1 : 0);
+      append(sb, prefix + e.getItemId() + "item-price", itemPrice(e.getItemId()));
       append(sb, prefix + "dwellTime", duration);
       if (e instanceof Click) {
         Click c = (Click) e;
         append(sb, prefix + c.getCategoryId() + "-catId", 1);
         append(sb, prefix + "special", c.isSpecial() ? 1 : 0);
-        append(sb, prefix + "cat-category", simplifyCategory(c));
+        append(sb, prefix + "category-simplified", simplifyCategory(c));
       }
     }
     return sb;
+  }
+
+  private int itemPrice(int itemId) {
+    int price = 0;
+    if (items.containsKey(itemId)) {
+      price = items.get(itemId).getPrice();
+    }
+    return price;
+  }
+
+  private boolean wasMultiPurchase(int itemId) {
+    return multiPurchases.contains(itemId);
   }
 
   private boolean wasPurchased(int itemId) {
@@ -508,8 +529,10 @@ public class YoochooseParser {
     mostPopularCategories = sortByValue(Collections.reverseOrder(), 100, categoriesBrowsed);
     LOG.info("Top 400 items purchased: \n{}", mapToString(mostPopularItems));
     LOG.info("Top 100 cats browsed: \n{}", mapToString(mostPopularCategories));
+    LOG.info("Unique items: {}", items.size());
     LOG.info("Unique items purchased: {}", itemsPurchased.size());
     LOG.info("Unique categories: \n{}", categoriesBrowsed.size());
+
 
   }
 
@@ -595,9 +618,13 @@ public class YoochooseParser {
             try {
               p.setItemId(Integer.parseInt(nextLine[2]));
               p.setPrice(Integer.parseInt(nextLine[3]));
-              p.setQuantity(Integer.parseInt(nextLine[3]));
+              p.setQuantity(Integer.parseInt(nextLine[4]));
+              if (p.getQuantity() > 1) {
+                multiPurchases.add(p.getItemId());
+              }
+
             } catch (ArrayIndexOutOfBoundsException e) {
-              // Expected for solution.dat - I hate myself for writing this code
+              // Expected for solution.dat - do nothing
             }
             move(p, vId);
             break;
@@ -605,6 +632,9 @@ public class YoochooseParser {
             LOG.error("Unsupported event type encountered");
             break;
         }
+
+        addOrUpdateItem(Integer.parseInt(nextLine[2]), Integer.parseInt(nextLine[3]),
+            Integer.parseInt(nextLine[4]));
 
         currTime = System.currentTimeMillis();
         i++;
@@ -623,6 +653,23 @@ public class YoochooseParser {
       LOG.error("Complete line is: '{},{},{},{}'", nextLine[0], nextLine[1], nextLine[2],
           nextLine[3]);
     }
+  }
+
+  private void addOrUpdateItem(int inItemId, int inPrice, int inMulti) {
+    Item curr = null;
+    if (items.containsKey(inItemId)) {
+      curr = items.get(inItemId);
+    } else {
+      curr = new Item();
+      curr.setId(inItemId);
+    }
+
+    curr.setPrice(inPrice);
+    if (inMulti > 1) {
+      curr.setMultiPurchase(true);
+    }
+
+    items.put(inItemId, curr);
   }
 
   private void add(Event inE, int vId) {

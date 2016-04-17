@@ -5,4 +5,8 @@ lib/
 reports/
 *.dat
 *.vw
+.ant-targets-build.xml
+*.label
+*.train
+*.test
 
