@@ -192,11 +192,11 @@ public class YoochooseParser {
     if (events.size() < NUM_EVENTS) {
       eLimit = events.size();
     }
-    for (int k = 0; k < eLimit; k++) {
-      Event e = events.get(k);
+    for (int eventCtr = 0; eventCtr < eLimit; eventCtr++) {
+      Event e = events.get(eventCtr);
       Event nextE = null;
-      if (k < events.size() - 1) {
-        nextE = events.get(k + 1);
+      if (eventCtr < events.size() - 1) {
+        nextE = events.get(eventCtr + 1);
       }
 
       long duration = 100L;
@@ -207,9 +207,9 @@ public class YoochooseParser {
       LocalDateTime ldt = e.getDate();
       String prefix = "";
       if (Format.VW.equals(inF)) {
-        sb.append("|Event" + k + FEAT_SEP);
+        sb.append("|Event" + eventCtr + FEAT_SEP);
       } else {
-        prefix += "Event" + k + FEAT_SEP;
+        prefix += "Event" + eventCtr + FEAT_SEP;
       }
       append(sb, prefix + "mth", ldt.getMonthValue());
       append(sb, prefix + "day", ldt.getDayOfMonth());
@@ -622,6 +622,9 @@ public class YoochooseParser {
               if (p.getQuantity() > 1) {
                 multiPurchases.add(p.getItemId());
               }
+              addOrUpdateItem(Integer.parseInt(nextLine[2]), Integer.parseInt(nextLine[3]),
+                  Integer.parseInt(nextLine[4]));
+
 
             } catch (ArrayIndexOutOfBoundsException e) {
               // Expected for solution.dat - do nothing
@@ -633,8 +636,6 @@ public class YoochooseParser {
             break;
         }
 
-        addOrUpdateItem(Integer.parseInt(nextLine[2]), Integer.parseInt(nextLine[3]),
-            Integer.parseInt(nextLine[4]));
 
         currTime = System.currentTimeMillis();
         i++;
