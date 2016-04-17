@@ -101,14 +101,14 @@ public class YoochooseParser {
     int i = 0;
     int j = 0;
 
-    try (PrintWriter out = new PrintWriter(new BufferedWriter(new FileWriter(inFName)));
-        PrintWriter out2 =
+    try (PrintWriter mainFile = new PrintWriter(new BufferedWriter(new FileWriter(inFName)));
+        PrintWriter labelsFile =
             new PrintWriter(new BufferedWriter(new FileWriter(inFName + ".label")))) {
       // We need a separate iterator for buyers
       Iterator<Entry<Integer, List<Event>>> buyerEntries = buyers.entrySet().iterator();
       for (Map.Entry<Integer, List<Event>> clickerEntry : clickers.entrySet()) {
-        writeSession(clickerEntry, out, format, mode);
-        writeLabel(clickerEntry.getKey(), out2);
+        writeSession(clickerEntry, mainFile, format, mode);
+        writeLabel(clickerEntry.getKey(), labelsFile);
         i++;
 
         // Only iterate over buyers collxn in TRAIN mode - in TEST mode it will be empty
@@ -120,8 +120,8 @@ public class YoochooseParser {
           }
           if (buyerEntries.hasNext()) {
             Map.Entry<Integer, List<Event>> buyerEntry = buyerEntries.next();
-            writeSession(buyerEntry, out, format, mode);
-            writeLabel(buyerEntry.getKey(), out2);
+            writeSession(buyerEntry, mainFile, format, mode);
+            writeLabel(buyerEntry.getKey(), labelsFile);
             i++;
           }
         }
@@ -138,9 +138,9 @@ public class YoochooseParser {
     }
   }
 
-  private void writeLabel(Integer key, PrintWriter out2) {
+  private void writeLabel(Integer inSessionId, PrintWriter out2) {
     StringBuilder sb = new StringBuilder();
-    sb.append(key + "\n");
+    sb.append(inSessionId + "\n");
     out2.write(sb.toString());
   }
 
@@ -158,9 +158,10 @@ public class YoochooseParser {
     }
     sb.append(buildStart(buyer, inM, inF, visitorId));
 
+    //Output session-level features
     sb.append(buildSessionFeatures(inF, events));
 
-    // Now add in the events themselves
+    // Now transform and output the events themselves
     sb.append(buildEvents(inF, events));
 
     sb.append("\n");
@@ -202,15 +203,38 @@ public class YoochooseParser {
       append(sb, prefix + "hour", ldt.getHour());
       append(sb, prefix + "minute", ldt.getMinute());
       append(sb, prefix + "second", ldt.getSecond());
-      append(sb, prefix + e.getItemId() + "-itemId", 1.0);
+      append(sb, prefix + e.getItemId() + "-itemId", 1);
       append(sb, prefix + "dwellTime", duration);
       if (e instanceof Click) {
         Click c = (Click) e;
-        append(sb, prefix + c.getCategoryId() + "-catId", 1.0);
-        append(sb, prefix + "special", c.isSpecial() ? "1.0" : "0.0");
+        append(sb, prefix + c.getCategoryId() + "-catId", 1);
+        append(sb, prefix + "special", c.isSpecial() ? 1 : 0);
+        append(sb, prefix + "cat-category", simplifyCategory(c));
       }
     }
     return sb;
+  }
+
+  /**
+   * Simplifies event categories into 4 simple buckets - brand, 1 - 12, special and not present
+   * @param inC
+   * @return
+   */
+  private int simplifyCategory(Click inC) {
+    int categoryId = inC.getCategoryId();
+    if (categoryId == 0){
+      //Data not present
+      return 1;
+    } else if (categoryId < 12 && categoryId > 0){
+      //One of 12
+      return 2;
+    } else if (inC.isSpecial()){
+      //Special
+      return 3;
+    } else {
+      //Must be brand
+      return 4;
+    }
   }
 
   private StringBuilder buildSessionFeatures(Format inF, List<Event> events) {
@@ -258,6 +282,12 @@ public class YoochooseParser {
     sb.append(FEAT_SEP + mapLabel(inL) + FEAT_VAL_SEP + inValue.toString());
   }
 
+  /**
+   * Maps all string inputs into a number space for LIBSVM format. A mapping is used consistently within a run, but is not guaranteed
+   * to be the same across multiple runs.
+   * @param inL
+   * @return
+   */
   private String mapLabel(String inL) {
     switch (format) {
       case VW:
@@ -272,6 +302,16 @@ public class YoochooseParser {
     }
   }
 
+  /**
+   * Create the initial part of each line in the training / test file - [class label], [label importance weighting], [a tag to know which session this line relates to].
+   * All field here are optional as (a) LIBSVM format does not support tags as VW does (xgboost errors and fails to parse), and for test files for both we don't know the labels for sessions. 
+   * 
+   * @param isBuyer
+   * @param inM
+   * @param inF
+   * @param inVisitorId
+   * @return
+   */
   private String buildStart(boolean isBuyer, Mode inM, Format inF, Integer inVisitorId) {
     String label = isBuyer ? BUYER_LABEL : CLICKER_LABEL;
     switch (inF) {
@@ -508,7 +548,7 @@ public class YoochooseParser {
     try (CSVReader reader = new CSVReader(new FileReader(inFname), inSeparatorChar)) {
       while ((nextLine = reader.readNext()) != null) {
 
-        // Handle blank lines - seem to only be in solution.dat
+        // Ignore blank lines (which only occur in solution.dat)
         if ("".equals(nextLine[0])) {
           continue;
         }
