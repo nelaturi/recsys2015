@@ -4,6 +4,10 @@ public class Item {
   
   private int id;
   
+  private int priceChangeCount = 0;
+  
+  private int catChangeCount = 0;
+  
   private int price;
   
   private int categoryId;
@@ -25,8 +29,8 @@ public class Item {
     return purchased;
   }
 
-  public void setPurchased(boolean purchased) {
-    this.purchased = purchased;
+  public void setPurchased(boolean inPurchased) {
+    this.purchased = inPurchased;
   }
 
   public int getId() {
@@ -43,6 +47,7 @@ public class Item {
 
   public void setPrice(int price) {
     this.price = price;
+    priceChangeCount++;
   }
 
   public int getCategoryId() {
@@ -51,6 +56,7 @@ public class Item {
 
   public void setCategoryId(int categoryId) {
     this.categoryId = categoryId;
+    priceChangeCount++;
   }
 
   public boolean isSeenWithPurchased() {
@@ -68,9 +74,12 @@ public class Item {
   public void setMultiPurchase(boolean isMultiPurchase) {
     this.isMultiPurchase = isMultiPurchase;
   }
-  
-  
-  
-  
 
+  public int getPriceChangeCount() {
+    return priceChangeCount;
+  }
+
+  public int getCatChangeCount() {
+    return catChangeCount;
+  }
 }

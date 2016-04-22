@@ -308,7 +308,7 @@ public class YoochooseParser {
     append(sb, "viewedPopularCats", didViewPopularCats(events) ? 1.0 : 0.0);
 
     // Rough approximation for content similarity by category
-    append(sb, "catSimilarity", calcCatSimilarity(events));
+    append(sb, "catSimilarity", dominantCategory(events));
 
     return sb;
   }
@@ -367,8 +367,12 @@ public class YoochooseParser {
     }
   }
 
-  private int calcCatSimilarity(List<Event> events) {
-
+  /**
+   * Returns the category seen most often in a session.
+   * @param events
+   * @return
+   */
+  private int dominantCategory(List<Event> events) {
     int rVal = 0;
     similar.clear();
     for (Event e : events) {
@@ -448,10 +452,13 @@ public class YoochooseParser {
   }
 
   public void analyse() {
+    internalAnalyse(clickers);
+    internalAnalyse(buyers);
+  }
+
+  private void internalAnalyse(Map<Integer, List<Event>> inSet) {
     // I know 262 is the max from inspecting the data, hence why we use 270 here..
     Map<Integer, Integer> eventBuckets = new HashMap<>(270);
-
-
     long allMins = 0;
     long average = 0;
     long purchaserMins = 0;
@@ -460,8 +467,8 @@ public class YoochooseParser {
     long unknownEventType = 0;
     long avgEvents = 0;
     int maxEvents = 0;
-    // TODO support both clickers and buyers..
-    for (Map.Entry<Integer, List<Event>> e : clickers.entrySet()) {
+    
+    for (Map.Entry<Integer, List<Event>> e : inSet.entrySet()) {
       List<Event> events = e.getValue();
 
       // Just looking for rogue / not-so-useful data
@@ -514,10 +521,9 @@ public class YoochooseParser {
             categoriesBrowsed.put(c.getCategoryId(), quantity);
           }
         }
-
       }
     }
-    // Get rid of 0 as it is not a real category - it represents data not present
+    // Get rid of 0 as it is not a real category - it simply represents data not present
     categoriesBrowsed.remove(0);
     LOG.info(
         "All max: {} secs, purchasers max: {} secs, avg: {} secs, single click {}, single purchase {}, unknown {}, max events {}, avg events {}",
@@ -531,9 +537,8 @@ public class YoochooseParser {
     LOG.info("Top 100 cats browsed: \n{}", mapToString(mostPopularCategories));
     LOG.info("Unique items: {}", items.size());
     LOG.info("Unique items purchased: {}", itemsPurchased.size());
-    LOG.info("Unique categories: \n{}", categoriesBrowsed.size());
-
-
+    LOG.info("Unique categories: {}", categoriesBrowsed.size());
+    
   }
 
   private Map<Integer, Integer> sortByValue(Comparator<Integer> inC, int inLimit,
@@ -688,7 +693,9 @@ public class YoochooseParser {
       buyers.put(vId, clickers.remove(vId));
       buyers.get(vId).add(inE);
     } else {
-      buyers.get(vId).add(inE);
+      if (buyers.containsKey(vId)) {
+        buyers.get(vId).add(inE);
+      }
     }
   }
 }
